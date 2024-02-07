@@ -1,4 +1,4 @@
-module github.com/synerex/provider_bus_operator
+module github.com/synerex/provider_train_operator
 
 go 1.21
 
