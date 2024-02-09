@@ -35,6 +35,14 @@ func supplyRecommendCallback(clt *sxutil.SXServiceClient, sp *api.Supply) {
 		err := proto.Unmarshal(sp.Cdata.Entity, recommend)
 		if err == nil {
 			log.Printf("Received Recommend Supply from %d %+v", sp.SenderId, recommend)
+			if recommend.RecommendName == "A" {
+				dmo := sxutil.DemandOpts{
+					Name:  role,
+					Cdata: sp.Cdata,
+				}
+				id := clt.ProposeDemand(&dmo)
+				log.Printf("Returned ID: %v\n", id)
+			}
 		}
 	} else {
 		log.Printf("Received JsonRecord Supply from %d %+v", sp.SenderId, sp.ArgJson)
