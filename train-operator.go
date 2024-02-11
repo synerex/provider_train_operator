@@ -29,6 +29,26 @@ func init() {
 	flag.Parse()
 }
 
+func supplyRecommendDemandCallback(clt *sxutil.SXServiceClient, dm *api.Demand) {
+	recommend := &rcm.Recommend{}
+	if dm.Cdata != nil {
+		err := proto.Unmarshal(dm.Cdata.Entity, recommend)
+		if err == nil {
+			log.Printf("Received Recommend Demand %d: SenderId %d, TargetId %d, JSON %+v", dm.Id, dm.SenderId, dm.TargetId, dm.ArgJson)
+			if recommend.RecommendName == "A" {
+				err := clt.Confirm(sxutil.IDType(dm.Id), sxutil.IDType(dm.Id))
+				if err != nil {
+					log.Printf("Confirm Send Fail! %v\n", err)
+				} else {
+					log.Printf("Confirmed! %+v\n", dm)
+				}
+			}
+		}
+	} else {
+		log.Printf("Received JsonRecord Demand %d: SenderId %d, TargetId %d, JSON %+v", dm.Id, dm.SenderId, dm.TargetId, dm.ArgJson)
+	}
+}
+
 func supplyRecommendCallback(clt *sxutil.SXServiceClient, sp *api.Supply) {
 	recommend := &rcm.Recommend{}
 	if sp.Cdata != nil {
@@ -126,6 +146,7 @@ func main() {
 	wg.Add(1)
 	log.Print("Subscribe Supply")
 	go subscribeRecommendSupply(rcmClient)
+	sxutil.SimpleSubscribeDemand(rcmClient, supplyRecommendDemandCallback)
 	// go subscribeJsonRecordSupply(envClient)
 
 	// タイマーを開始する
