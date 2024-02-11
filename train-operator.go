@@ -23,6 +23,7 @@ var (
 	version         = "0.0.0"
 	role            = "TrainOperator"
 	sxServerAddress string
+	proposedDmIds   []uint64
 )
 
 func init() {
@@ -34,18 +35,10 @@ func supplyRecommendDemandCallback(clt *sxutil.SXServiceClient, dm *api.Demand) 
 	if dm.Cdata != nil {
 		err := proto.Unmarshal(dm.Cdata.Entity, recommend)
 		if err == nil {
-			log.Printf("Received Recommend Demand %d: SenderId %d, TargetId %d, JSON %+v", dm.Id, dm.SenderId, dm.TargetId, dm.ArgJson)
-			if recommend.RecommendName == "A" {
-				err := clt.Confirm(sxutil.IDType(dm.Id), sxutil.IDType(dm.Id))
-				if err != nil {
-					log.Printf("Confirm Send Fail! %v\n", err)
-				} else {
-					log.Printf("Confirmed! %+v\n", dm)
-				}
-			}
+			log.Printf("Received Recommend Demand: Demand: %+v, Recommend: %+v", dm, recommend)
 		}
 	} else {
-		log.Printf("Received JsonRecord Demand %d: SenderId %d, TargetId %d, JSON %+v", dm.Id, dm.SenderId, dm.TargetId, dm.ArgJson)
+		log.Printf("Received JsonRecord Demand: Demand %+v, JSON %s", dm, dm.ArgJson)
 	}
 }
 
@@ -54,18 +47,34 @@ func supplyRecommendCallback(clt *sxutil.SXServiceClient, sp *api.Supply) {
 	if sp.Cdata != nil {
 		err := proto.Unmarshal(sp.Cdata.Entity, recommend)
 		if err == nil {
-			log.Printf("Received Recommend Supply from %d %+v", sp.SenderId, recommend)
+			log.Printf("Received Recommend Supply: Supply: %+v, Recommend: %+v", sp.SenderId, recommend)
 			if recommend.RecommendName == "A" {
 				dmo := sxutil.DemandOpts{
 					Name:  role,
 					Cdata: sp.Cdata,
 				}
-				id := clt.ProposeDemand(&dmo)
-				log.Printf("Returned ID: %v\n", id)
+				dmid := clt.ProposeDemand(&dmo)
+				proposedDmIds = append(proposedDmIds, dmid)
+				log.Printf("#4 ProposeDemand Sent OK! dmo: %#v, dmid: %d\n", dmo, dmid)
 			}
 		}
 	} else {
-		log.Printf("Received JsonRecord Supply from %d %+v", sp.SenderId, sp.ArgJson)
+		flag := false
+		for _, pdid := range proposedDmIds {
+			if pdid == sp.TargetId {
+				flag = true
+				log.Printf("Received JsonRecord Supply for me: Supply %+v, JSON: %s", sp, sp.ArgJson)
+				err := clt.Confirm(sxutil.IDType(sp.Id), sxutil.IDType(sp.Id))
+				if err != nil {
+					log.Printf("#6 Confirm Send Fail! %v\n", err)
+				} else {
+					log.Printf("#6 Confirmed! %+v\n", sp)
+				}
+			}
+		}
+		if !flag {
+			log.Printf("Received JsonRecord Supply for others: Supply %+v, JSON: %s", sp, sp.ArgJson)
+		}
 	}
 }
 
@@ -73,19 +82,6 @@ func subscribeRecommendSupply(client *sxutil.SXServiceClient) {
 	ctx := context.Background() //
 	for {                       // make it continuously working..
 		client.SubscribeSupply(ctx, supplyRecommendCallback)
-		log.Print("Error on subscribe")
-		reconnectClient(client)
-	}
-}
-
-func supplyJsonRecordCallback(clt *sxutil.SXServiceClient, sp *api.Supply) {
-	log.Printf("Received JsonRecord Supply from %d %+v", sp.SenderId, sp.ArgJson)
-}
-
-func subscribeJsonRecordSupply(client *sxutil.SXServiceClient) {
-	ctx := context.Background() //
-	for {                       // make it continuously working..
-		client.SubscribeSupply(ctx, supplyJsonRecordCallback)
 		log.Print("Error on subscribe")
 		reconnectClient(client)
 	}
