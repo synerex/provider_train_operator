@@ -52,6 +52,7 @@ func supplyRecommendCallback(clt *sxutil.SXServiceClient, sp *api.Supply) {
 				dmo := sxutil.DemandOpts{
 					Name:  role,
 					Cdata: sp.Cdata,
+					JSON:  `{ "mobility":"alternative", "direction":"North", "from": "岩倉駅" }`,
 				}
 				dmid := clt.ProposeDemand(&dmo)
 				proposedDmIds = append(proposedDmIds, dmid)
