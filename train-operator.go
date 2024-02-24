@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
 
 	rcm "github.com/synerex/proto_recommend"
 	api "github.com/synerex/synerex_api"
@@ -24,6 +26,9 @@ var (
 	role            = "TrainOperator"
 	sxServerAddress string
 	proposedDmIds   []uint64
+	rcmClient       *sxutil.SXServiceClient
+	supplies        []*api.Supply
+	recommends      []*rcm.Recommend
 )
 
 func init() {
@@ -48,16 +53,18 @@ func supplyRecommendCallback(clt *sxutil.SXServiceClient, sp *api.Supply) {
 		err := proto.Unmarshal(sp.Cdata.Entity, recommend)
 		if err == nil {
 			log.Printf("Received Recommend Supply: Supply: %+v, Recommend: %+v", sp.SenderId, recommend)
-			if recommend.RecommendName == "A" {
-				dmo := sxutil.DemandOpts{
-					Name:  role,
-					Cdata: sp.Cdata,
-					JSON:  `{ "mobility":"alternative", "direction":"North", "from": "岩倉駅" }`,
-				}
-				dmid := clt.ProposeDemand(&dmo)
-				proposedDmIds = append(proposedDmIds, dmid)
-				log.Printf("#4 ProposeDemand Sent OK! dmo: %#v, dmid: %d\n", dmo, dmid)
-			}
+			supplies = append(supplies, sp)
+			recommends = append(recommends, recommend)
+			// if recommend.RecommendName == "A" {
+			// 	dmo := sxutil.DemandOpts{
+			// 		Name:  role,
+			// 		Cdata: sp.Cdata,
+			// 		JSON:  `{ "mobility":"alternative", "direction":"North", "from": "岩倉駅" }`,
+			// 	}
+			// 	dmid := clt.ProposeDemand(&dmo)
+			// 	proposedDmIds = append(proposedDmIds, dmid)
+			// 	log.Printf("#4 ProposeDemand Sent OK! dmo: %#v, dmid: %d\n", dmo, dmid)
+			// }
 		}
 	} else {
 		flag := false
@@ -109,6 +116,51 @@ func reconnectClient(client *sxutil.SXServiceClient) {
 	mu.Unlock()
 }
 
+func suppliesHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Called /api/v0/supplies\n")
+
+	response, err := json.Marshal(recommends)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(response)
+}
+
+func selectSupplyHandler(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	log.Printf("Called /api/v0/select_supply with name: %s\n", name)
+
+	recommend := &rcm.Recommend{}
+	for _, sp := range supplies {
+		proto.Unmarshal(sp.Cdata.Entity, recommend)
+		if recommend.RecommendName == name {
+			dmo := sxutil.DemandOpts{
+				Name:  role,
+				Cdata: sp.Cdata,
+				JSON:  `{ "mobility":"alternative", "direction":"North", "from": "岩倉駅" }`,
+			}
+			dmid := rcmClient.ProposeDemand(&dmo)
+			proposedDmIds = append(proposedDmIds, dmid)
+			log.Printf("#4 ProposeDemand Sent OK! dmo: %#v, dmid: %d\n", dmo, dmid)
+			break
+		}
+	}
+
+	response, err := json.Marshal(recommend)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(response)
+}
+
 func main() {
 	go sxutil.HandleSigInt()
 	sxutil.RegisterDeferFunction(sxutil.UnRegisterNode)
@@ -137,7 +189,7 @@ func main() {
 		log.Print("Connecting SynerexServer")
 	}
 
-	rcmClient := sxutil.NewSXServiceClient(client, pbase.ALT_PT_SVC, fmt.Sprintf("{Client:%s}", role))
+	rcmClient = sxutil.NewSXServiceClient(client, pbase.ALT_PT_SVC, fmt.Sprintf("{Client:%s}", role))
 	// envClient := sxutil.NewSXServiceClient(client, pbase.JSON_DATA_SVC, fmt.Sprintf("{Client:%s}", role))
 
 	wg.Add(1)
@@ -145,6 +197,11 @@ func main() {
 	go subscribeRecommendSupply(rcmClient)
 	sxutil.SimpleSubscribeDemand(rcmClient, supplyRecommendDemandCallback)
 	// go subscribeJsonRecordSupply(envClient)
+
+	http.HandleFunc("/api/v0/supplies", suppliesHandler)
+	http.HandleFunc("/api/v0/select_supply", selectSupplyHandler)
+	fmt.Println("Server is running on port 8030")
+	go http.ListenAndServe(":8060", nil)
 
 	// タイマーを開始する
 	ticker := time.NewTicker(15 * time.Second)
