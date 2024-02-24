@@ -130,9 +130,9 @@ func suppliesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(response)
 }
 
-func selectSupplyHandler(w http.ResponseWriter, r *http.Request) {
+func proposeDemandHandler(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
-	log.Printf("Called /api/v0/select_supply with name: %s\n", name)
+	log.Printf("Called /api/v0/propose_demand with name: %s\n", name)
 
 	recommend := &rcm.Recommend{}
 	for _, sp := range supplies {
@@ -145,6 +145,8 @@ func selectSupplyHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			dmid := rcmClient.ProposeDemand(&dmo)
 			proposedDmIds = append(proposedDmIds, dmid)
+			supplies = nil
+			recommends = nil
 			log.Printf("#4 ProposeDemand Sent OK! dmo: %#v, dmid: %d\n", dmo, dmid)
 			break
 		}
@@ -199,7 +201,7 @@ func main() {
 	// go subscribeJsonRecordSupply(envClient)
 
 	http.HandleFunc("/api/v0/supplies", suppliesHandler)
-	http.HandleFunc("/api/v0/select_supply", selectSupplyHandler)
+	http.HandleFunc("/api/v0/propose_demand", proposeDemandHandler)
 	fmt.Println("Server is running on port 8030")
 	go http.ListenAndServe(":8060", nil)
 
