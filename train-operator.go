@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"strings"
 
 	rcm "github.com/synerex/proto_recommend"
 	api "github.com/synerex/synerex_api"
@@ -131,25 +132,30 @@ func suppliesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func proposeDemandHandler(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get("name")
-	log.Printf("Called /api/v0/propose_demand with name: %s\n", name)
+	names := strings.Split(r.URL.Query().Get("name"), ",")
+	log.Printf("Called /api/v0/propose_demand with names: %v\n", names)
 
 	recommend := &rcm.Recommend{}
-	for _, sp := range supplies {
-		proto.Unmarshal(sp.Cdata.Entity, recommend)
-		if recommend.RecommendName == name {
-			dmo := sxutil.DemandOpts{
-				Name:  role,
-				Cdata: sp.Cdata,
-				JSON:  `{ "mobility":"alternative", "direction":"North", "from": "岩倉駅" }`,
+	proposed := false
+	for _, name := range names {
+		for _, sp := range supplies {
+			proto.Unmarshal(sp.Cdata.Entity, recommend)
+			if recommend.RecommendName == name {
+				dmo := sxutil.DemandOpts{
+					Name:  role,
+					Cdata: sp.Cdata,
+					JSON:  `{ "mobility":"alternative", "direction":"North", "from": "岩倉駅" }`,
+				}
+				dmid := rcmClient.ProposeDemand(&dmo)
+				proposedDmIds = append(proposedDmIds, dmid)
+				log.Printf("#4 ProposeDemand Sent OK! dmo: %#v, dmid: %d\n", dmo, dmid)
+				proposed = true
 			}
-			dmid := rcmClient.ProposeDemand(&dmo)
-			proposedDmIds = append(proposedDmIds, dmid)
-			supplies = nil
-			recommends = nil
-			log.Printf("#4 ProposeDemand Sent OK! dmo: %#v, dmid: %d\n", dmo, dmid)
-			break
 		}
+	}
+	if proposed {
+		supplies = nil
+		recommends = nil
 	}
 
 	response, err := json.Marshal(recommend)
